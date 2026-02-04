@@ -1,44 +1,53 @@
 [build-system]
-# Specifies the build system to use. 
-requires = ["setuptools>=42"]
+requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
+
 [project]
-# Basic information about your project.
-name = "your-package-name" 
-version = "0.1.0" 
-dependencies = []
-requires-python = ">=3.7"
+name = "bonn-shutter"
+version = "0.1.0"
+description = "Control and integration software for the Bonn shutter mechanism using Python, C, and C++."
+readme = "README.md"
+
+requires-python = ">=3.8"
+
 authors = [
-  {name = "Your Name", email = "your.email@example.com"}
+    { name="Elijah Anakalea-Buckley", email="elijahab@caltech.edu" },
+    { name="Dave Hale", email="dhale@astro.caltech.edu" }
 ]
-maintainers = [
-  {name = "Your Name", email = "your.email@example.com"}
-]
-description = "A brief description of your package"
-readme = "README.md" 
+
 license = { text = "MIT" }
-keywords = ["example", "package", "keywords"] 
+
+keywords = [
+  "shutter",
+  "instrument-control",
+  "hardware",
+  "bonn"
+]
+
 classifiers = [
-  "Programming Language :: Python"
+  "Programming Language :: Python :: 3",
+  "Programming Language :: C",
+  "Programming Language :: C++",
+  "Operating System :: OS Independent",
+  "Topic :: Scientific/Engineering",
+  "Topic :: System :: Hardware"
+]
+
+dependencies = [
+  # Required for the Python control layer
+  "hardware_device_base@git+https://github.com/COO-Utilities/hardware_device_base#egg=main"
 ]
 
 [project.urls]
-# Various URLs related to your project. These links are displayed on PyPI.
-Homepage = "https://example.com" 
-Documentation = "https://readthedocs.org"
-Repository = "https://github.com/yourusername/your-repo"
-"Bug Tracker" = "https://github.com/yourusername/your-repo/issues" 
-Changelog = "https://github.com/yourusername/your-repo/blob/master/CHANGELOG.md"
+Homepage = "https://github.com/COO-Utilities/bonn_shutter"
+Repository = "https://github.com/COO-Utilities/bonn_shutter"
+Issues = "https://github.com/COO-Utilities/bonn_shutter/issues"
 
-[project.scripts]
-# Defines command-line scripts for your package. Replace with your script and function.
-your-command = "your_module:your_function"
 
 [project.optional-dependencies]
-# Optional dependencies that can be installed with extra tags, like "dev".
 dev = [
-  "pytest", 
+  "pytest",
   "black",
   "flake8"
 ]
