@@ -218,9 +218,18 @@ class BonnShutterController(HardwareMotionBase): #pylint: disable=R0902
 
     def get_status(self) -> dict:
         '''Get the status of the Bonn Shutter.'''
-        self.status["A"] = self._parse_sv(self._send_command(self.Cmds.CHECK_STATUS + " 1"))
-        self.status["B"] = self._parse_sv(self._send_command(self.Cmds.CHECK_STATUS + " 2"))
-        self.status["system"] = self._send_command(self.Cmds.CHECK_STATUS + " 0")
+        if self.state['is_connected'] is False:
+            raise RuntimeError("Shutter is not Connected")
+        
+        if self._send_command(self.Cmds.CHECK_STATUS + " 1") is not True:
+            raise RuntimeError("Failed too communicate with shutter")
+        self.status["A"] = self._parse_sv(self._read_reply())
+        if self._send_command(self.Cmds.CHECK_STATUS + " 2") is not True:
+            raise RuntimeError("Failed to communicate with shutter")
+        self.status["B"] = self._parse_sv(self._read_reply())
+        if self._send_command(self.Cmds.CHECK_STATUS + " 0") is not True:
+            raise RuntimeError("Failed to communicate with shutter")
+        self.status["system"] = self._read_reply()
         return self.status
 
 ###############################################################################
