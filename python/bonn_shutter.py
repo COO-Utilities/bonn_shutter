@@ -4,6 +4,7 @@ Docstring for repositories.COO-Workbench.controls-python.bonn_shutter
 import socket
 from typing import Union, Tuple, Dict
 import serial
+import serial.tools.list_ports
 from hardware_device_base import HardwareMotionBase
 
 class BonnShutterCommands: # pylint: disable=R0903
@@ -74,7 +75,7 @@ class BonnShutterController(HardwareMotionBase): #pylint: disable=R0902
             print(f'p.manufacturer: {p.manufacturer}')
             if 'FTDI' in p.manufacturer:
                 return self.ftdi_ports.append(p.device)
-            return None
+        return None
 
     def set_connection(self, connection_type: str, host: str = None,
                    port: int = None, device_path: str = None) -> None:
@@ -102,7 +103,7 @@ class BonnShutterController(HardwareMotionBase): #pylint: disable=R0902
                 if not self.ftdi_ports:
                     self.list_devices()
                 if not self.ftdi_ports:
-                    raise ConnectionError("No FTDI USB devices found for Bonn Shutter.")
+                    raise ConnectionError("No FTDI USB devices recognized")
             self.state['connection_type'] = 'usb'
             return None
         raise ValueError("Invalid connection type. Must be 'rj45' or 'usb'.")
@@ -209,7 +210,9 @@ class BonnShutterController(HardwareMotionBase): #pylint: disable=R0902
         if self.state['is_connected'] is False:
             raise RuntimeError("Shutter is not connected")
         try:
-            state = self._parse_ss(self._send_command(self.Cmds.STANDARD_CMDS))
+            if self._send_command(self.Cmds.SHUTTER_IN_APERTURE) is not True:
+                raise RuntimeError("Failed to communicate with shutter")
+            state = self._parse_ss(self._read_reply())
             if state is None:
                 raise RuntimeError("Failed to get shutter state")
             self.state['shutter_state'] = state
