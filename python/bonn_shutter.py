@@ -119,6 +119,7 @@ class BonnShutterController(HardwareMotionBase): #pylint: disable=R0902
                 if not self.ftdi_ports:
                     raise ConnectionError("No FTDI USB devices found for Bonn Shutter.")
                 self._connect_usb(self.ftdi_ports[0])  # Connect to the first FTDI device found
+            self._set_connected(True)
         except Exception as e: # pylint: disable=W0703
             raise ConnectionError("Error encountered during connection: " + str(e)) from e
 
@@ -131,6 +132,7 @@ class BonnShutterController(HardwareMotionBase): #pylint: disable=R0902
             self.dev.close()
             self.dev = None
         self.state['is_connected'] = False
+        self._set_connected(False)
 
     def _send_command(self, command: str) -> list[str]: # pylint: disable=W0221
         '''Send a command to the Bonn Shutter device and return the response.'''
