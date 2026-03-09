@@ -67,9 +67,9 @@ class BonnShutterController(HardwareMotionBase): #pylint: disable=R0902
         self._usb_ports=serial.tools.list_ports.comports()
 
         for p in self._usb_ports:
-            if 'FTDI' in p.manufacturer:
+            if p.manufacturer is not None and 'FTDI' in p.manufacturer:
                 self.logger.info("FTDI Device found: %s",p.device)
-                return self.ftdi_ports.append(p.device)
+                self.ftdi_ports.append(p.device)
         return None
 
     def set_connection(self, connection_type: str, host: str = None,
