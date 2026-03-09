@@ -36,7 +36,8 @@ classifiers = [
 
 dependencies = [
   # Required for the Python control layer
-  "hardware_device_base@git+https://github.com/COO-Utilities/hardware_device_base#egg=main"
+  "hardware_device_base@git+https://github.com/COO-Utilities/hardware_device_base#egg=main",
+  "pyserial"
 ]
 
 [project.urls]

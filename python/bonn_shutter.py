@@ -4,10 +4,9 @@ Docstring for repositories.COO-Workbench.controls-python.bonn_shutter
 import socket
 from typing import Union, Tuple, Dict
 import serial
-import serial.tools.list_ports
 from hardware_device_base import HardwareMotionBase
 
-class BonnShutterCommands:
+class BonnShutterCommands: # pylint: disable=R0903
     '''
     Class for Bonn Shutter Commands
     bonn shutter 100m has 2 blades: A and B
@@ -31,7 +30,7 @@ class BonnShutterCommands:
     FACTORY_RESET = "fd"
 
 
-class BonnShutterController(HardwareMotionBase):
+class BonnShutterController(HardwareMotionBase): #pylint: disable=R0902
     '''
     BonnShutterController - USB and RJ45 control for Bonn Shutter devices.
        -100m model with 2 blades (A and B).
@@ -56,36 +55,11 @@ class BonnShutterController(HardwareMotionBase):
         self.socket = None
         self.host = None
         self.port = None
+        self.device_path = None
         self.timeout = 5  # Default timeout in seconds
         self._usb_ports = []
         self.ftdi_ports = []
         self.dev = None
-
-    def connect_rj45(self, host: str, port: int) -> None:
-        '''Connect to the Bonn Shutter device.'''
-        self.host = host
-        self.port = port
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.settimeout(self.timeout)
-        try:
-            self.socket.connect((self.host, self.port))
-            self.state['connection_type'] = 'rj45'
-            self.state['is_connected'] = True
-        except socket.error as e:
-            raise ConnectionError(f"Could not connect to {self.host}:{self.port} - {e}") from e
-
-    def connect_usb(self, device_path: str) -> None:
-        '''Connect to the Bonn Shutter device via USB (placeholder).'''
-        try:
-            self.dev = serial.Serial(port=device_path, baudrate=19200, bytesize=8,
-                                         stopbits=1, parity=serial.PARITY_NONE)
-            #clear input/output buffers and ensure connection is live
-            self.dev.reset_input_buffer()
-            self.dev.reset_output_buffer()
-            self.state['connection_type'] = 'usb'
-            self.state['is_connected'] = True
-        except serial.SerialException as e:
-            raise ConnectionError(f"Could not connect to USB device at {device_path} - {e}") from e
 
     def list_devices(self) -> None:
         '''List available USB devices (Bonn Shutter devices typically FTDI).'''
@@ -102,6 +76,56 @@ class BonnShutterController(HardwareMotionBase):
                 return self.ftdi_ports.append(p.device)
             return None
 
+    def set_connection(self, connection_type: str, host: str = None,
+                   port: int = None, device_path: str = None) -> None:
+        '''
+        Set the connection parameters for the Bonn Shutter device.
+            connection_type: 'rj45' or 'usb'
+            host: IP address for RJ45 connection
+            port: Port number for RJ45 connection
+            device_path: Device path for USB connection (e.g., '/dev/ttyUSB0')
+        '''
+        if connection_type == 'rj45':
+            self.host = host
+            self.port = port
+            if not self.host or not self.port:
+                raise ValueError("Host and port must be set for RJ45 connection.")
+            self.state['connection_type'] = 'rj45'
+            return None
+        if connection_type == 'usb':
+            if device_path:
+                self.device_path = device_path.strip()
+            else:
+                self.ftdi_ports = []
+                if device_path:
+                    self.ftdi_ports.append(device_path)
+                if not self.ftdi_ports:
+                    self.list_devices()
+                if not self.ftdi_ports:
+                    raise ConnectionError("No FTDI USB devices found for Bonn Shutter.")
+            self.state['connection_type'] = 'usb'
+            return None
+        raise ValueError("Invalid connection type. Must be 'rj45' or 'usb'.")
+
+    def connect(self) -> None: # pylint: disable=W0246,W0221
+        '''Connect to the Bonn Shutter device using the specified connection type.'''
+        try:
+            if self.state['connection_type'] == 'rj45':
+                if not self.host or not self.port:
+                    raise ValueError("Host and port must be set for RJ45 connection.")
+                self._connect_rj45(self.host, self.port)
+            elif self.state['connection_type'] == 'usb':
+                if self.device_path is not None:
+                    self._connect_usb(self.device_path)
+                    return None
+                if not self.ftdi_ports:
+                    self.list_devices()
+                if not self.ftdi_ports:
+                    raise ConnectionError("No FTDI USB devices found for Bonn Shutter.")
+                self._connect_usb(self.ftdi_ports[0])  # Connect to the first FTDI device found
+        except Exception as e: # pylint: disable=W0703
+            raise ConnectionError("Error encountered during connection: " + str(e)) from e
+
     def disconnect(self) -> None:
         '''Disconnect from the Bonn Shutter device.'''
         if self.socket:
@@ -112,7 +136,7 @@ class BonnShutterController(HardwareMotionBase):
             self.dev = None
         self.state['is_connected'] = False
 
-    def send_command(self, command: str) -> list[str]:
+    def _send_command(self, command: str) -> list[str]: # pylint: disable=W0221
         '''Send a command to the Bonn Shutter device and return the response.'''
         if not self.socket and not self.dev:
             raise ConnectionError("Not connected to the Bonn Shutter device.")
@@ -120,20 +144,40 @@ class BonnShutterController(HardwareMotionBase):
         try:
             if self.state['connection_type'] == 'rj45': # pylint: disable=R1705
                 self.socket.sendall(command.encode('utf-8') + b'\r')
-                return self._read_until_prompt_socket()
+                return True
             elif self.state['connection_type'] == 'usb':
                 self.dev.write((command.encode('utf-8') + b'\r'))
-                return self._read_until_prompt_usb()
+                return True
             raise ConnectionError("Unknown connection type.")
         except socket.error as e:
             raise IOError(f"Error sending command '{command}': {e}") from e
+
+    def _read_reply(self) -> Union[str, None]:
+        """Receive a reply from the device."""
+        if not self.is_connected():
+            self.logger.error("Device is not connected")
+            self._set_status((-1, "Device is not connected"))
+            return None
+        if self.state['connection_type'] == 'rj45':
+            reply = self._read_until_prompt_socket()
+        elif self.state['connection_type'] == 'usb':
+            reply =  self._read_until_prompt_usb()
+        else:
+            self.logger.error("Unknown connection type")
+            self._set_status((-1, "Unknown connection type"))
+            reply = ""
+            return None
+        self._set_status((0, "Reply received"))
+        return reply
 
     def open_shutter(self) -> None:
         '''Open the Bonn Shutter.'''
         if self.state['is_connected'] is False:
             raise RuntimeError("Shutter is not connected")
         try:
-            state = self._parse_ss(self.send_command(self.Cmds.OPEN))
+            if self._send_command(self.Cmds.OPEN) is not True:
+                raise RuntimeError("Failed to send open command")
+            state = self._parse_ss(self._read_reply())
             if state != 1:
                 raise RuntimeError("Shutter failed to open")
             self.state['is_open'] = True
@@ -148,7 +192,9 @@ class BonnShutterController(HardwareMotionBase):
         if self.state['is_connected'] is False:
             raise RuntimeError("Shutter is not connected")
         try:
-            state = self._parse_ss(self.send_command(self.Cmds.CLOSE))
+            if self._send_command(self.Cmds.CLOSE) is not True:
+                raise RuntimeError("Failed to send close command")
+            state = self._parse_ss(self._read_reply())
             if state == 1:
                 raise RuntimeError("Shutter failed to close")
             self.state['is_open'] = False
@@ -158,15 +204,55 @@ class BonnShutterController(HardwareMotionBase):
             self.state['error_code'] = str(e)
             raise RuntimeError(f"Failed to close shutter: {e}") from e
 
+    def is_open(self) -> bool:
+        '''Check if the Bonn Shutter is open.'''
+        if self.state['is_connected'] is False:
+            raise RuntimeError("Shutter is not connected")
+        try:
+            state = self._parse_ss(self._send_command(self.Cmds.STANDARD_CMDS))
+            if state is None:
+                raise RuntimeError("Failed to get shutter state")
+            self.state['shutter_state'] = state
+            return state == 1
+        except Exception as e:
+            self.state['error_code'] = str(e)
+            raise RuntimeError(f"Failed to check if shutter is open: {e}") from e
+
     def get_status(self) -> dict:
         '''Get the status of the Bonn Shutter.'''
-        self.status["A"] = self._parse_sv(self.send_command(self.Cmds.CHECK_STATUS + " 1"))
-        self.status["B"] = self._parse_sv(self.send_command(self.Cmds.CHECK_STATUS + " 2"))
-        self.status["system"] = self.send_command(self.Cmds.CHECK_STATUS + " 0")
+        self.status["A"] = self._parse_sv(self._send_command(self.Cmds.CHECK_STATUS + " 1"))
+        self.status["B"] = self._parse_sv(self._send_command(self.Cmds.CHECK_STATUS + " 2"))
+        self.status["system"] = self._send_command(self.Cmds.CHECK_STATUS + " 0")
         return self.status
 
 ###############################################################################
-# Private helper methods for parsing responses
+# Private helper methods for establishing connections and parsing responses
+
+    def _connect_rj45(self, host: str, port: int) -> None:
+        '''Connect to the Bonn Shutter device.'''
+        self.host = host
+        self.port = port
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket.settimeout(self.timeout)
+        try:
+            self.socket.connect((self.host, self.port))
+            self.state['connection_type'] = 'rj45'
+            self.state['is_connected'] = True
+        except socket.error as e:
+            raise ConnectionError(f"Could not connect to {self.host}:{self.port} - {e}") from e
+
+    def _connect_usb(self, device_path: str) -> None:
+        '''Connect to the Bonn Shutter device via USB (placeholder).'''
+        try:
+            self.dev = serial.Serial(port=device_path, baudrate=19200, bytesize=8,
+                                         stopbits=1, parity=serial.PARITY_NONE)
+            #clear input/output buffers and ensure connection is live
+            self.dev.reset_input_buffer()
+            self.dev.reset_output_buffer()
+            self.state['connection_type'] = 'usb'
+            self.state['is_connected'] = True
+        except serial.SerialException as e:
+            raise ConnectionError(f"Could not connect to USB device at {device_path} - {e}") from e
 
     def _read_until_prompt_usb(self, timeout=1.0) -> list[str]:
         '''
