@@ -37,3 +37,16 @@ The Python shutter controller is built using a shared hardware abstraction base 
 
 ```python
 from hardware_device_base import HardwareMotionBase
+```
+
+### Example Python Code
+
+```bash
+>>>import bonn_shutter
+>>>dev = bonn_shuttter.BonnShutterContoller()
+>>>dev.set_connection('usb')
+>>>dev.connect()
+>>>dev.open_shutter()
+>>>dev.close_shutter()
+>>>dev.disconnect()
+```
