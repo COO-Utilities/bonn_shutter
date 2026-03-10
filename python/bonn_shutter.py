@@ -254,15 +254,15 @@ class BonnShutterController(HardwareMotionBase): #pylint: disable=R0902
         try:
             if self._send_command(self.Cmds.CHECK_STATUS + " 1") is not True:
                 raise RuntimeError("Failed too communicate with shutter")
-            bladeA = self._parse_sv(self._read_reply())
+            blade_a = self._parse_sv(self._read_reply())
             if self._send_command(self.Cmds.CHECK_STATUS + " 2") is not True:
                 raise RuntimeError("Failed to communicate with shutter")
-            bladeB = self._parse_sv(self._read_reply())
+            blade_b = self._parse_sv(self._read_reply())
             if self._send_command(self.Cmds.CHECK_STATUS + " 0") is not True:
                 raise RuntimeError("Failed to communicate with shutter")
             system_zero = self._read_reply()
 
-            self.status = {"0": system_zero,"Blade_A":bladeA,"Blade_B":bladeB,}
+            self.status = {"0": system_zero,"Blade_A":blade_a,"Blade_B":blade_b}
 
             return self.status
         except Exception as e: #pylint: disable=W0718
