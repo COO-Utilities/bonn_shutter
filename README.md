@@ -20,10 +20,8 @@ Typical components in this repository include:
 
 - `bonn_shutter.py` — Main Python shutter control module  
 - `python/` — Additional Python interfaces and utilities  
-- `src/` or `cpp/` — Core C/C++ shutter control implementation  
-- `include/` — Header files for driver and interface code  
+- `cpp/` — Core C/C++ shutter control implementation  
 - `examples/` — Example usage and test programs  
-- `docs/` — Additional documentation (if available)  
 
 (Directory names may vary depending on development stage.)
 
