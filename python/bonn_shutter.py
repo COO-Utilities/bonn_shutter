@@ -62,18 +62,18 @@ class BonnShutterController(HardwareMotionBase): #pylint: disable=R0902
         self.ftdi_ports = []
         self.dev = None
 
-    def list_devices(self) -> None:
+    def list_devices(self) -> list:
         '''List available USB devices (Bonn Shutter devices typically FTDI).'''
         self._usb_ports=serial.tools.list_ports.comports()
 
         for p in self._usb_ports:
             if p.manufacturer is not None and 'FTDI' in p.manufacturer:
-                self.logger.info("FTDI Device found: %s",p.device)
+                self.report_info(f"FTDI Device found: {p.device}")
                 self.ftdi_ports.append(p.device)
-        return None
+        return self.ftdi_ports
 
     def set_connection(self, connection_type: str, host: str = None,
-                   port: int = None, device_path: str = None) -> None:
+                   port: int = None, device_path: str = None) -> bool:
         '''
         Set the connection parameters for the Bonn Shutter device.
             connection_type: 'rj45' or 'usb'
@@ -81,29 +81,34 @@ class BonnShutterController(HardwareMotionBase): #pylint: disable=R0902
             port: Port number for RJ45 connection
             device_path: Device path for USB connection (e.g., '/dev/ttyUSB0')
         '''
-        if connection_type == 'rj45':
-            self.host = host
-            self.port = port
-            if not self.host or not self.port:
-                raise ValueError("Host and port must be set for RJ45 connection.")
-            self.state['connection_type'] = 'rj45'
-            return None
-        if connection_type == 'usb':
-            if device_path:
-                self.device_path = device_path.strip()
-            else:
-                self.ftdi_ports = []
+        try:
+            if connection_type not in ['rj45','usb']:
+                raise ValueError("Invalid connection type. Must be 'rj45' or 'usb'.")
+            if connection_type == 'rj45':
+                self.host = host
+                self.port = port
+                if not self.host or not self.port:
+                    raise ValueError("Host and port must be set for RJ45 connection.")
+                self.state['connection_type'] = 'rj45'
+            if connection_type == 'usb':
                 if device_path:
-                    self.ftdi_ports.append(device_path)
-                if not self.ftdi_ports:
-                    self.list_devices()
-                if not self.ftdi_ports:
-                    raise ConnectionError("No FTDI USB devices recognized")
-            self.state['connection_type'] = 'usb'
-            return None
-        raise ValueError("Invalid connection type. Must be 'rj45' or 'usb'.")
+                    self.device_path = device_path.strip()
+                else:
+                    self.ftdi_ports = []
+                    if device_path:
+                        self.ftdi_ports.append(device_path)
+                    if not self.ftdi_ports:
+                        self.list_devices()
+                    if not self.ftdi_ports:
+                        raise ConnectionError("No FTDI USB devices recognized")
+                self.state['connection_type'] = 'usb'
+            self.report_info(f"Set connection to: {self.state['connection_type']}")
+            return True
+        except Exception as e: #pylint: disable=W0718
+            self.report_error(f"Error: {e}")
+            return False
 
-    def connect(self) -> None: # pylint: disable=W0246,W0221
+    def connect(self) -> bool: # pylint: disable=W0246,W0221
         '''Connect to the Bonn Shutter device using the specified connection type.'''
         try:
             if self.state['connection_type'] == 'rj45':
@@ -120,58 +125,72 @@ class BonnShutterController(HardwareMotionBase): #pylint: disable=R0902
                     raise ConnectionError("No FTDI USB devices found for Bonn Shutter.")
                 self._connect_usb(self.ftdi_ports[0])  # Connect to the first FTDI device found
             self._set_connected(True)
+            self.state['is_connected'] = True
+            return True
         except Exception as e: # pylint: disable=W0703
-            raise ConnectionError("Error encountered during connection: " + str(e)) from e
+            self.report_error(f"Error: {e}")
+            return False
 
-    def disconnect(self) -> None:
+    def disconnect(self) -> bool:
         '''Disconnect from the Bonn Shutter device.'''
-        if self.socket:
-            self.socket.close()
-            self.socket = None
-        if self.dev:
-            self.dev.close()
-            self.dev = None
-        self.state['is_connected'] = False
-        self._set_connected(False)
+        try:
+            if self.socket:
+                self.socket.close()
+                self.socket = None
+            if self.dev:
+                self.dev.close()
+                self.dev = None
+            self.state['is_connected'] = False
+            self._set_connected(False)
+            return True
+        except Exception as e: #pylint: disable=W0703
+            self.report_error(f"Error: {e}")
+            return False
 
     def _send_command(self, command: str) -> list[str]: # pylint: disable=W0221
         '''Send a command to the Bonn Shutter device and return the response.'''
         if not self.socket and not self.dev:
             raise ConnectionError("Not connected to the Bonn Shutter device.")
-
         try:
-            if self.state['connection_type'] == 'rj45': # pylint: disable=R1705
+            if self.state['connection_type'] is None:
+                raise ConnectionError("No connection type set")
+            elif self.state['connection_type'] == 'rj45': # pylint: disable=R1705
                 self.socket.sendall(command.encode('utf-8') + b'\r')
                 return True
             elif self.state['connection_type'] == 'usb':
                 self.dev.write((command.encode('utf-8') + b'\r'))
-                return True
-            raise ConnectionError("Unknown connection type.")
-        except socket.error as e:
-            raise IOError(f"Error sending command '{command}': {e}") from e
+            else:
+                raise ConnectionError("Unknown Connection type.")
+            return True
+        except Exception as e: #pylint: disable=W0718
+            self.report_error(f"Error sending command '{command}': {e}")
+            return False
 
     def _read_reply(self) -> Union[str, None]:
         """Receive a reply from the device."""
         if not self.is_connected():
-            self.logger.error("Device is not connected")
-            self._set_status((-1, "Device is not connected"))
+            self.report_error("Device is not connected")
             return None
-        if self.state['connection_type'] == 'rj45':
-            reply = self._read_until_prompt_socket()
-        elif self.state['connection_type'] == 'usb':
-            reply =  self._read_until_prompt_usb()
-        else:
-            self.logger.error("Unknown connection type")
-            self._set_status((-1, "Unknown connection type"))
-            reply = ""
-            return None
-        self._set_status((0, "Reply received"))
-        return reply
 
-    def open_shutter(self) -> None:
+        try:
+            if self.state['connection_type'] == 'rj45':
+                reply = self._read_until_prompt_socket()
+            elif self.state['connection_type'] == 'usb':
+                reply =  self._read_until_prompt_usb()
+            else:
+                reply = ""
+                raise ConnectionError("Unknown connection type")
+
+            return reply
+        except Exception as e: #pylint: disable=W0718
+            self.report_error(f"Error: {e}")
+            return None
+
+    def open_shutter(self) -> bool:
         '''Open the Bonn Shutter.'''
         if self.state['is_connected'] is False:
-            raise RuntimeError("Shutter is not connected")
+            self.report_error("Error: Shutter is not connected")
+            return False
         try:
             if self._send_command(self.Cmds.OPEN) is not True:
                 raise RuntimeError("Failed to send open command")
@@ -179,16 +198,19 @@ class BonnShutterController(HardwareMotionBase): #pylint: disable=R0902
             if state != 1:
                 raise RuntimeError("Shutter failed to open")
             self.state['is_open'] = True
-            self.state['last_command'] = self.Cmds.OPEN
             self.state['shutter_state'] = state
-        except Exception as e:
+            self.state['error_code'] = ''
+            return True
+        except Exception as e: #pylint: disable=W0718
             self.state['error_code'] = str(e)
-            raise RuntimeError(f"Failed to open shutter: {e}") from e
+            self.report_error(f"Error: {e}")
+            return False
 
-    def close_shutter(self) -> None:
+    def close_shutter(self) -> bool:
         '''Close the Bonn Shutter.'''
         if self.state['is_connected'] is False:
-            raise RuntimeError("Shutter is not connected")
+            self.report_error("Error: Shutter is not connected")
+            return False
         try:
             if self._send_command(self.Cmds.CLOSE) is not True:
                 raise RuntimeError("Failed to send close command")
@@ -196,16 +218,19 @@ class BonnShutterController(HardwareMotionBase): #pylint: disable=R0902
             if state == 1:
                 raise RuntimeError("Shutter failed to close")
             self.state['is_open'] = False
-            self.state['last_command'] = self.Cmds.CLOSE
             self.state['shutter_state'] = state
-        except Exception as e:
+            self.state['error_code'] = ''
+            return True
+        except Exception as e: #pylint: disable=W0718
             self.state['error_code'] = str(e)
-            raise RuntimeError(f"Failed to close shutter: {e}") from e
+            self.report_error(f"Error: {e}")
+            return False
 
     def is_open(self) -> bool:
         '''Check if the Bonn Shutter is open.'''
         if self.state['is_connected'] is False:
-            raise RuntimeError("Shutter is not connected")
+            self.report_error("Error: Shutter is not connected")
+            return False
         try:
             if self._send_command(self.Cmds.SHUTTER_IN_APERTURE) is not True:
                 raise RuntimeError("Failed to communicate with shutter")
@@ -214,25 +239,30 @@ class BonnShutterController(HardwareMotionBase): #pylint: disable=R0902
                 raise RuntimeError("Failed to get shutter state")
             self.state['shutter_state'] = state
             return state == 1
-        except Exception as e:
+        except Exception as e: #pylint: disable=W0718
             self.state['error_code'] = str(e)
-            raise RuntimeError(f"Failed to check if shutter is open: {e}") from e
+            self.report_error(f"Error: {e}")
 
     def get_status(self) -> dict:
         '''Get the status of the Bonn Shutter.'''
         if self.state['is_connected'] is False:
-            raise RuntimeError("Shutter is not Connected")
+            self.report_error("Error: Shutter is not connected")
+            return False
+        try:
+            if self._send_command(self.Cmds.CHECK_STATUS + " 1") is not True:
+                raise RuntimeError("Failed too communicate with shutter")
+            self.status["A"] = self._parse_sv(self._read_reply())
+            if self._send_command(self.Cmds.CHECK_STATUS + " 2") is not True:
+                raise RuntimeError("Failed to communicate with shutter")
+            self.status["B"] = self._parse_sv(self._read_reply())
+            if self._send_command(self.Cmds.CHECK_STATUS + " 0") is not True:
+                raise RuntimeError("Failed to communicate with shutter")
+            self.status["system"] = self._read_reply()
 
-        if self._send_command(self.Cmds.CHECK_STATUS + " 1") is not True:
-            raise RuntimeError("Failed too communicate with shutter")
-        self.status["A"] = self._parse_sv(self._read_reply())
-        if self._send_command(self.Cmds.CHECK_STATUS + " 2") is not True:
-            raise RuntimeError("Failed to communicate with shutter")
-        self.status["B"] = self._parse_sv(self._read_reply())
-        if self._send_command(self.Cmds.CHECK_STATUS + " 0") is not True:
-            raise RuntimeError("Failed to communicate with shutter")
-        self.status["system"] = self._read_reply()
-        return self.status
+            return self.status
+        except Exception as e: #pylint: disable=W0718
+            self.report_error(f"Error: {e}")
+            return {}
 
 ###############################################################################
 # Private helper methods for establishing connections and parsing responses
@@ -270,35 +300,41 @@ class BonnShutterController(HardwareMotionBase): #pylint: disable=R0902
         '''
         lines = []
         self.dev.timeout = timeout
-        while True:
-            raw = self.dev.readline()
-            if not raw:
-                break
-            line = raw.decode("utf-8", errors="ignore").strip()
-            if line == "c>":
-                break
-            if line:
-                lines.append(line)
-        return lines
+        try:
+            while True:
+                raw = self.dev.readline()
+                if not raw:
+                    break
+                line = raw.decode("utf-8", errors="ignore").strip()
+                if line == "c>":
+                    break
+                if line:
+                    lines.append(line)
+            return lines
+        except Exception as e: #pylint: disable=W0718
+            raise OSError("USB Read failed") from e
 
     def _read_until_prompt_socket(self, timeout=1.0) -> list[str]:
         '''socket version of read until prompt'''
         self.socket.settimeout(timeout)
         buffer = ""
         lines = []
-        while True:
-            chunk = self.socket.recv(1024).decode("utf-8", errors="ignore")
-            if not chunk:
-                break
-            buffer += chunk
-            while "\n" in buffer:
-                line, buffer = buffer.split("\n", 1)
-                line = line.strip()
-                if line == "c>":
-                    return lines
-                if line:
-                    lines.append(line)
-        return lines
+        try:
+            while True:
+                chunk = self.socket.recv(1024).decode("utf-8", errors="ignore")
+                if not chunk:
+                    break
+                buffer += chunk
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    line = line.strip()
+                    if line == "c>":
+                        return lines
+                    if line:
+                        lines.append(line)
+            return lines
+        except Exception as e: #pylint: disable=W0718
+            raise ConnectionError("RJ45/Socket connection lost during read.") from e
 
     def _parse_sv(self, lines: list[str]) -> dict:
         '''Parse 'sv x' response into structured flags'''
