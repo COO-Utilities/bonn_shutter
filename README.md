@@ -41,12 +41,23 @@ from hardware_device_base import HardwareMotionBase
 
 ### Example Python Code
 
-```bash
->>>import bonn_shutter
->>>dev = bonn_shuttter.BonnShutterContoller()
->>>dev.set_connection('usb')
->>>dev.connect()
->>>dev.open_shutter()
->>>dev.close_shutter()
->>>dev.disconnect()
-```
+```python
+import bonn_shutter
+
+# Initialize the controller
+dev = bonn_shutter.BonnShutterController()
+
+# Configure the connection (USB or RJ45/Ethernet)
+# For USB:
+dev.set_connection('usb') 
+
+# For RJ45 (TCP/IP):
+# dev.set_connection('rj45', host='192.168.200.200', port=10012)
+
+# Establish connection and control the hardware
+try:
+    dev.connect()
+    dev.open_shutter()
+    dev.close_shutter()
+finally:
+    dev.disconnect()
